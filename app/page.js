@@ -15,9 +15,20 @@ export default function Home() {
     const [mode, setMode] = useState(EXERCISE_MODES.PUSHUPS);
     const [count, setCount] = useState(0);
     const [feedback, setFeedback] = useState('Position yourself');
-    const [poseState, setPoseState] = useState('up');
+
+    // Using refs for internal logic to avoid stale closures and heavy re-renders/re-initializations
+    const internalStateRef = useRef({
+        poseState: 'up',
+        mode: EXERCISE_MODES.PUSHUPS,
+        lastCountTime: 0
+    });
 
     const poseRef = useRef(null);
+
+    // Sync mode from UI to ref
+    useEffect(() => {
+        internalStateRef.current.mode = mode;
+    }, [mode]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -31,6 +42,7 @@ export default function Home() {
         pose.setOptions({
             modelComplexity: 1,
             smoothLandmarks: true,
+            enableSegmentation: false,
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5,
         });
@@ -59,40 +71,42 @@ export default function Home() {
 
                 // Exercise Logic
                 const landmarks = results.poseLandmarks;
+                const { poseState, mode: currentMode, lastCountTime } = internalStateRef.current;
                 let angle = 0;
 
-                if (mode === EXERCISE_MODES.PUSHUPS) {
-                    // Shoulder (11), Elbow (13), Wrist (15) - using left side for logic
+                if (currentMode === EXERCISE_MODES.PUSHUPS) {
                     const shoulder = landmarks[11];
                     const elbow = landmarks[13];
                     const wrist = landmarks[15];
-
                     if (shoulder && elbow && wrist) {
                         angle = calculateAngle(shoulder, elbow, wrist);
                     }
-                } else if (mode === EXERCISE_MODES.SQUATS) {
-                    // Hip (23), Knee (25), Ankle (27) - using left side
+                } else if (currentMode === EXERCISE_MODES.SQUATS) {
                     const hip = landmarks[23];
                     const knee = landmarks[25];
                     const ankle = landmarks[27];
-
                     if (hip && knee && ankle) {
                         angle = calculateAngle(hip, knee, ankle);
                     }
                 }
 
-                const newState = getExerciseState(angle, poseState, mode);
+                const newState = getExerciseState(angle, poseState, currentMode);
 
                 if (newState !== poseState) {
+                    const now = Date.now();
                     if (newState === 'up' && poseState === 'down') {
-                        setCount(prev => prev + 1);
-                        setFeedback('Good rep!');
+                        // Prevent double counting within 500ms
+                        if (now - lastCountTime > 500) {
+                            setCount(prev => prev + 1);
+                            setFeedback('Good rep!');
+                            internalStateRef.current.lastCountTime = now;
+                        }
                     } else if (newState === 'down') {
                         setFeedback('Push up!');
                     }
-                    setPoseState(newState);
+                    internalStateRef.current.poseState = newState;
                 } else if (poseState === 'up' && angle > 160) {
-                    setFeedback(mode === EXERCISE_MODES.PUSHUPS ? 'Go lower!' : 'Squat lower!');
+                    setFeedback(currentMode === EXERCISE_MODES.PUSHUPS ? 'Go lower!' : 'Squat lower!');
                 }
             }
             canvasCtx.restore();
@@ -101,28 +115,35 @@ export default function Home() {
         poseRef.current = pose;
 
         return () => {
-            pose.close();
+            if (poseRef.current) {
+                poseRef.current.close();
+            }
         };
-    }, [mode, poseState]);
+    }, []); // Run once on mount
 
     useEffect(() => {
-        if (videoRef.current && poseRef.current) {
-            let animationFrameId;
+        let isProcessing = false;
+        let animationFrameId;
 
-            const processFrame = async () => {
-                if (videoRef.current && videoRef.current.readyState >= 2) {
+        const processFrame = async () => {
+            if (videoRef.current && videoRef.current.readyState >= 2 && poseRef.current && !isProcessing) {
+                isProcessing = true;
+                try {
                     await poseRef.current.send({ image: videoRef.current });
+                } catch (e) {
+                    console.error("Pose processing error:", e);
                 }
-                animationFrameId = requestAnimationFrame(processFrame);
-            };
+                isProcessing = false;
+            }
+            animationFrameId = requestAnimationFrame(processFrame);
+        };
 
-            processFrame();
+        processFrame();
 
-            return () => {
-                cancelAnimationFrame(animationFrameId);
-            };
-        }
-    }, [videoRef.current]);
+        return () => {
+            cancelAnimationFrame(animationFrameId);
+        };
+    }, [videoRef]);
 
     if (cameraError) {
         return (
