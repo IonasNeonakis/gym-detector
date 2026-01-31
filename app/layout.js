@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-    title: 'Gym Detector',
-    description: 'AI-powered exercise counter',
+    title: 'FormPolice',
+    description: 'AI-powered exercise form tracking',
     manifest: '/manifest.json',
 };
 
