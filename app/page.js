@@ -8,6 +8,7 @@ import { EXERCISE_MODES, calculateAngle, getExerciseState } from './utils/exerci
 import { Pose } from '@mediapipe/pose';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 import { POSE_CONNECTIONS } from '@mediapipe/pose';
+import confetti from 'canvas-confetti';
 
 export default function Home() {
     const { videoRef, stream, error: cameraError } = useCamera();
@@ -109,6 +110,12 @@ export default function Home() {
                             setCount(prev => prev + 1);
                             setFeedback('Perfect Form!');
                             setIsRewarding(true);
+                            confetti({
+                                particleCount: 100,
+                                spread: 70,
+                                origin: { y: 0.6 },
+                                colors: ['#39ff14', '#00f2ff', '#ffffff']
+                            });
                             setTimeout(() => setIsRewarding(false), 800);
                             internalStateRef.current.lastCountTime = now;
                         }
