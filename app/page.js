@@ -15,6 +15,7 @@ export default function Home() {
     const [mode, setMode] = useState(EXERCISE_MODES.PUSHUPS);
     const [count, setCount] = useState(0);
     const [feedback, setFeedback] = useState('Position yourself');
+    const [isRewarding, setIsRewarding] = useState(false);
 
     // Using refs for internal logic to avoid stale closures and heavy re-renders/re-initializations
     const internalStateRef = useRef({
@@ -29,6 +30,13 @@ export default function Home() {
     useEffect(() => {
         internalStateRef.current.mode = mode;
     }, [mode]);
+
+    const handleReset = () => {
+        setCount(0);
+        setFeedback('Position yourself');
+        internalStateRef.current.poseState = 'up';
+        internalStateRef.current.lastCountTime = 0;
+    };
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -61,12 +69,13 @@ export default function Home() {
             if (results.poseLandmarks) {
                 // Draw landmarks
                 drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {
-                    color: '#00FF00',
+                    color: '#39ff14',
                     lineWidth: 4,
                 });
                 drawLandmarks(canvasCtx, results.poseLandmarks, {
-                    color: '#FF0000',
-                    lineWidth: 2,
+                    color: '#ffffff',
+                    lineWidth: 1,
+                    radius: 3
                 });
 
                 // Exercise Logic
@@ -95,18 +104,20 @@ export default function Home() {
                 if (newState !== poseState) {
                     const now = Date.now();
                     if (newState === 'up' && poseState === 'down') {
-                        // Prevent double counting within 500ms
-                        if (now - lastCountTime > 500) {
+                        // Prevent double counting within 800ms
+                        if (now - lastCountTime > 800) {
                             setCount(prev => prev + 1);
-                            setFeedback('Good rep!');
+                            setFeedback('Perfect Form!');
+                            setIsRewarding(true);
+                            setTimeout(() => setIsRewarding(false), 800);
                             internalStateRef.current.lastCountTime = now;
                         }
                     } else if (newState === 'down') {
-                        setFeedback('Push up!');
+                        setFeedback('Drive Up!');
                     }
                     internalStateRef.current.poseState = newState;
                 } else if (poseState === 'up' && angle > 160) {
-                    setFeedback(currentMode === EXERCISE_MODES.PUSHUPS ? 'Go lower!' : 'Squat lower!');
+                    setFeedback(currentMode === EXERCISE_MODES.PUSHUPS ? 'Lower chest' : 'Hips lower');
                 }
             }
             canvasCtx.restore();
@@ -147,10 +158,10 @@ export default function Home() {
 
     if (cameraError) {
         return (
-            <div className="container">
+            <div className="container" style={{ justifyContent: 'center', alignItems: 'center' }}>
                 <div className="error">
                     <h2>Camera Error</h2>
-                    <p>{cameraError.message}</p>
+                    <p style={{ opacity: 0.7, marginTop: '0.5rem' }}>{cameraError.message}</p>
                 </div>
             </div>
         );
@@ -188,11 +199,19 @@ export default function Home() {
                         <option value={EXERCISE_MODES.PUSHUPS}>Pushups</option>
                         <option value={EXERCISE_MODES.SQUATS}>Squats</option>
                     </select>
+
+                    <button className="resetBtn" onClick={handleReset}>
+                        RESET
+                    </button>
                 </div>
 
-                <div className="stats">
-                    <h1 className="counter">{count}</h1>
-                    <p className="feedback">{feedback}</p>
+                <div className="stats" style={{ borderColor: isRewarding ? 'var(--neon-green)' : 'rgba(255,255,255,0.1)' }}>
+                    <h1 className={`counter ${isRewarding ? 'counterPop' : ''}`}>
+                        {count}
+                    </h1>
+                    <p className={`feedback ${isRewarding ? 'reward' : ''}`}>
+                        {feedback}
+                    </p>
                 </div>
             </div>
         </main>
