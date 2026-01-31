@@ -108,5 +108,3 @@ No analytics
 No external APIs except MediaPipe
 
 Keep code minimal and readable
-
-Single-page implementation
