@@ -8,11 +8,11 @@ const withPWA = require('next-pwa')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // next-pwa uses webpack, so we need to ensure it works with Turbopack enabled by default in Next 15+
-  // or explicitly use webpack for build.
+  // next-pwa requires webpack for manifest and service worker generation.
+  // We explicitly use webpack in the build script to ensure compatibility.
   webpack: (config) => {
     return config;
-  }
+  },
 };
 
 module.exports = withPWA(nextConfig);
