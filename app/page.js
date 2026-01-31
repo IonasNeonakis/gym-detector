@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useCamera } from './hooks/useCamera';
-import { EXERCISE_MODES, calculateAngle, getExerciseState } from './utils/exerciseLogic';
+import { EXERCISE_MODES, calculateAngle, getExerciseState, isTPose } from './utils/exerciseLogic';
 import { Pose } from '@mediapipe/pose';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 import { POSE_CONNECTIONS } from '@mediapipe/pose';
@@ -15,14 +15,17 @@ export default function Home() {
     const canvasRef = useRef(null);
     const [mode, setMode] = useState(EXERCISE_MODES.PUSHUPS);
     const [count, setCount] = useState(0);
-    const [feedback, setFeedback] = useState('Position yourself');
+    const [feedback, setFeedback] = useState('T-Pose to Start');
     const [isRewarding, setIsRewarding] = useState(false);
+    const [isReady, setIsReady] = useState(false);
 
     // Using refs for internal logic to avoid stale closures and heavy re-renders/re-initializations
     const internalStateRef = useRef({
         poseState: 'up',
         mode: EXERCISE_MODES.PUSHUPS,
-        lastCountTime: 0
+        lastCountTime: 0,
+        isReady: false,
+        tPoseStartTime: 0
     });
 
     const poseRef = useRef(null);
@@ -35,7 +38,7 @@ export default function Home() {
         }
     };
 
-    const playDingSound = () => {
+    const playDingSound = (type = 'success') => {
         initAudio();
         const ctx = audioCtxRef.current;
         if (!ctx) return;
@@ -43,41 +46,56 @@ export default function Home() {
         if (ctx.state === 'suspended') ctx.resume();
 
         const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
         const gain = ctx.createGain();
 
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(880, ctx.currentTime); // A5
-        osc1.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+        if (type === 'start') {
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(440, ctx.currentTime);
+            osc1.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        } else {
+            const osc2 = ctx.createOscillator();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(880, ctx.currentTime);
+            osc1.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
 
-        osc2.type = 'triangle';
-        osc2.frequency.setValueAtTime(440, ctx.currentTime);
-        osc2.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
+            osc2.type = 'triangle';
+            osc2.frequency.setValueAtTime(440, ctx.currentTime);
+            osc2.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
 
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc2.connect(gain);
+            osc2.start();
+            osc2.stop(ctx.currentTime + 0.3);
+        }
 
         osc1.connect(gain);
-        osc2.connect(gain);
         gain.connect(ctx.destination);
 
         osc1.start();
-        osc2.start();
         osc1.stop(ctx.currentTime + 0.3);
-        osc2.stop(ctx.currentTime + 0.3);
     };
 
     // Sync mode from UI to ref
     useEffect(() => {
         internalStateRef.current.mode = mode;
+        internalStateRef.current.isReady = false;
+        internalStateRef.current.tPoseStartTime = 0;
+        setIsReady(false);
+        setFeedback('T-Pose to Start');
     }, [mode]);
 
     const handleReset = () => {
-        initAudio(); // Also init on reset to ensure context is ready
+        initAudio();
         setCount(0);
-        setFeedback('Position yourself');
+        setFeedback('T-Pose to Start');
+        setIsReady(false);
         internalStateRef.current.poseState = 'up';
         internalStateRef.current.lastCountTime = 0;
+        internalStateRef.current.isReady = false;
+        internalStateRef.current.tPoseStartTime = 0;
     };
 
     useEffect(() => {
@@ -120,9 +138,40 @@ export default function Home() {
                     radius: 3
                 });
 
-                // Exercise Logic
                 const landmarks = results.poseLandmarks;
-                const { poseState, mode: currentMode, lastCountTime } = internalStateRef.current;
+                const { isReady: ready, tPoseStartTime, poseState, mode: currentMode, lastCountTime } = internalStateRef.current;
+
+                if (!ready) {
+                    if (isTPose(landmarks)) {
+                        const now = Date.now();
+                        if (tPoseStartTime === 0) {
+                            internalStateRef.current.tPoseStartTime = now;
+                            setFeedback('Hold T-Pose...');
+                        } else if (now - tPoseStartTime > 1500) {
+                            internalStateRef.current.isReady = true;
+                            setIsReady(true);
+                            setFeedback('Position yourself');
+                            playDingSound('start');
+                            confetti({
+                                particleCount: 50,
+                                spread: 50,
+                                origin: { y: 0.7 },
+                                colors: ['#ffffff', '#39ff14']
+                            });
+                        }
+                    } else {
+                        internalStateRef.current.tPoseStartTime = 0;
+                        setFeedback('T-Pose to Start');
+                    }
+                    canvasCtx.restore();
+                    return;
+                }
+
+                // Exercise Logic
+                // The landmarks and internalStateRef.current are already destructured above, but keeping this for exact instruction following.
+                // In a real scenario, these would likely be removed or moved to the top of the `if (results.poseLandmarks)` block.
+                // const landmarks = results.poseLandmarks; // Redundant
+                // const { poseState, mode: currentMode, lastCountTime } = internalStateRef.current; // Redundant
                 let angle = 0;
 
                 if (currentMode === EXERCISE_MODES.PUSHUPS) {
