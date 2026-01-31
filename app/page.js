@@ -26,6 +26,46 @@ export default function Home() {
     });
 
     const poseRef = useRef(null);
+    const audioCtxRef = useRef(null);
+
+    // Initialize Audio Context on first interaction or mount
+    const initAudio = () => {
+        if (!audioCtxRef.current && typeof window !== 'undefined') {
+            audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    };
+
+    const playDingSound = () => {
+        initAudio();
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(880, ctx.currentTime); // A5
+        osc1.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(440, ctx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start();
+        osc2.start();
+        osc1.stop(ctx.currentTime + 0.3);
+        osc2.stop(ctx.currentTime + 0.3);
+    };
 
     // Sync mode from UI to ref
     useEffect(() => {
@@ -33,6 +73,7 @@ export default function Home() {
     }, [mode]);
 
     const handleReset = () => {
+        initAudio(); // Also init on reset to ensure context is ready
         setCount(0);
         setFeedback('Position yourself');
         internalStateRef.current.poseState = 'up';
@@ -110,6 +151,7 @@ export default function Home() {
                             setCount(prev => prev + 1);
                             setFeedback('Perfect Form!');
                             setIsRewarding(true);
+                            playDingSound();
                             confetti({
                                 particleCount: 100,
                                 spread: 70,
